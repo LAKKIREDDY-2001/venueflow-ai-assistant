@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VenueFlow AI - Sporting Venue Assistant</title>
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_MAPS_KEY&amp;libraries=places&amp;v=weekly"></script>
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=default"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>🏟️ VenueFlow AI</h1>
+    <p>Navigate crowds, check waits, coordinate in real-time.</p>
+  </header>
+
+  <main>
+    <section aria-label="Venue Selector">
+      <label for="venueSelect">Select Venue/Event:</label>
+      <select id="venueSelect">
+        <option value="wembley">Wembley Stadium</option>
+        <option value="sofi">SoFi Stadium</option>
+      </select>
+      <button id="loadVenue">Load Map</button>
+    </section>
+
+    <div id="mapContainer">
+      <div id="map"></div>
+    </div>
+
+    <section aria-label="Navigation">
+      <label for="destination">Go to:</label>
+      <input type="text" id="destination" placeholder="e.g. Gate 5, Concession A" aria-describedby="destHelp">
+      <button id="getDirections">Get Route</button>
+      <small id="destHelp">Uses Places API.</small>
+    </section>
+
+    <section aria-label="AI Assistant">
+      <h2>AI Advisor</h2>
+      <div id="chatHistory" role="log" aria-live="polite"></div>
+      <div class="chatInput">
+        <input type="text" id="chatInput" placeholder="Ask about path, waits, meetup...">
+        <button id="sendChat">Send</button>
+      </div>
+    </section>
+
+    <section aria-label="Status">
+      <div id="status">Click Load Map to start.</div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
