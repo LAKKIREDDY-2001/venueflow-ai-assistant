@@ -1,5 +1,5 @@
 // VenueFlow AI - script.js
-// Replace YOUR_*_KEY with your Google API keys
+// Replace YOUR_MAPS_KEY, YOUR_GEMINI_KEY with your Google API keys from console.cloud.google.com
 
 class VenueFlowAI {
   constructor() {
@@ -9,7 +9,8 @@ class VenueFlowAI {
     this.directionsService = null;
     this.directionsRenderer = null;
     this.placesService = null;
-    this.geminiApiKey = 'YOUR_GEMINI_KEY'; // gemini.google.com/app/api-key
+    this.geminiApiKey = 'YOUR_GEMINI_KEY';
+    this.mapsKey = 'YOUR_MAPS_KEY';
     this.venueData = {
       wembley: {
         center: {lat: 51.5558, lng: -0.2795},
@@ -21,36 +22,52 @@ class VenueFlowAI {
         name: 'SoFi Stadium'
       }
     };
-    this.userContext = {}; // loc, time, etc.
+    this.userContext = {};
     this.init();
   }
 
   init() {
-    document.addEventListener('DOMContentLoaded', () => {
-      this.bindEvents();
+    this.bindEvents();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('loadVenue').click();
+      });
+    } else {
       document.getElementById('loadVenue').click();
-    });
+    }
   }
 
   bindEvents() {
-    document.getElementById('loadVenue').onclick = () => this.loadVenue();
-    document.getElementById('getDirections').onclick = () => this.getDirections();
-    document.getElementById('sendChat').onclick = () => this.sendChat();
-    document.getElementById('chatInput').onkeypress = (e) => {
+    const loadBtn = document.getElementById('loadVenue');
+    if (loadBtn) loadBtn.onclick = () => this.loadVenue();
+
+    const dirBtn = document.getElementById('getDirections');
+    if (dirBtn) dirBtn.onclick = () => this.getDirections();
+
+    const chatBtn = document.getElementById('sendChat');
+    if (chatBtn) chatBtn.onclick = () => this.sendChat();
+
+    const chatInput = document.getElementById('chatInput');
+    if (chatInput) chatInput.onkeypress = (e) => {
       if (e.key === 'Enter') this.sendChat();
     };
   }
 
-  async loadVenue() {
+  loadVenue() {
     const venueKey = document.getElementById('venueSelect').value;
     const venue = this.venueData[venueKey];
-    document.getElementById('status').textContent = `Loading ${venue.name}...`;
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = `Loading ${venue.name}... (Replace API keys to use)`;
+
+    if (typeof google === 'undefined' || !google.maps) {
+      statusEl.textContent = 'Replace YOUR_MAPS_KEY in index.html <script src> and reload.';
+      return;
+    }
 
     this.map = new google.maps.Map(document.getElementById('map'), {
       zoom: 16,
       center: venue.center,
-      mapTypeId: 'satellite', // Venue view
-      mapId: 'venueflow-map' // Optional styling
+      mapTypeId: 'satellite'
     });
 
     this.directionsService = new google.maps.DirectionsService();
@@ -58,7 +75,6 @@ class VenueFlowAI {
     this.directionsRenderer.setMap(this.map);
     this.placesService = new google.maps.places.PlacesService(this.map);
 
-    // Simulated crowd heatmap data (lat,lng,weight 0-1)
     const crowdData = this.generateCrowdData(venue.center);
     this.heatmap = new google.maps.visualization.HeatmapLayer({
       data: crowdData,
@@ -68,66 +84,82 @@ class VenueFlowAI {
     });
 
     this.getUserLocation();
-    document.getElementById('status').textContent = `Welcome to ${venue.name}! Use chat or destination input.`;
+    statusEl.textContent = `${venue.name} loaded! (Demo mode - add keys for full func: Maps, Places, Gemini)`;
   }
 
-  generateCrowdData(center, count = 200) {
+  generateCrowdData(center) {
     const data = [];
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < 200; i++) {
       const lat = center.lat + (Math.random() - 0.5) * 0.01;
       const lng = center.lng + (Math.random() - 0.5) * 0.01;
-      const weight = Math.random(); // 0 low, 1 high crowd
+      const weight = Math.random();
       data.push(new google.maps.LatLng(lat, lng, weight));
     }
     return data;
   }
 
   getUserLocation() {
+    if (!navigator.geolocation) {
+      document.getElementById('status').textContent += ' Geoloc not supported.';
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const loc = {lat: pos.coords.latitude, lng: pos.coords.longitude};
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         this.userContext.location = loc;
-        if (this.userMarker) this.userMarker.setMap(null);
-        this.userMarker = new google.maps.Marker({
-          position: loc,
-          map: this.map,
-          title: 'You',
-          icon: {url: 'data:image/svg+xml;base64,...blue-dot', scaledSize: new google.maps.Size(32,32)} // Simple
-        });
-        this.map.panTo(loc);
+        if (this.map && this.userMarker) this.userMarker.setMap(null);
+        if (this.map) {
+          this.userMarker = new google.maps.Marker({
+            position: loc,
+            map: this.map,
+            title: 'You are here'
+          });
+          this.map.panTo(loc);
+        }
       },
-      () => document.getElementById('status').textContent += ' Use manual loc.'
+      (err) => {
+        console.log('Geoloc error:', err);
+        document.getElementById('status').textContent += ' Enable geoloc.';
+      }
     );
   }
 
   getDirections() {
     const dest = document.getElementById('destination').value;
-    if (!dest || !this.userContext.location) return alert('Set loc/dest.');
+    if (!dest || !this.userContext.location) {
+      alert('Load map and allow location first.');
+      return;
+    }
+    if (!this.placesService) {
+      alert('Places API needs key.');
+      return;
+    }
 
-    this.placesService.textSearch({query: dest + ' Wembley Stadium', location: this.userContext.location}, (places, status) => {
-      if (status === 'OK' &amp;&amp; places[0]) {
+    const query = dest + ' near ' + this.venueData.wembley.name; // Default Wembley for demo
+    this.placesService.textSearch({ query: query, location: this.userContext.location }, (places, status) => {
+      if (status === google.maps.places.PlacesServiceStatus.OK && places[0]) {
         const request = {
           origin: this.userContext.location,
           destination: places[0].geometry.location,
-          travelMode: 'WALKING',
-          avoid: ['highways'] // Sim crowd avoid
+          travelMode: google.maps.TravelMode.WALKING
         };
-        this.directionsService.route(request, (result, status) => {
-          if (status === 'OK') {
+        this.directionsService.route(request, (result, dstatus) => {
+          if (dstatus === google.maps.DirectionsStatus.OK) {
             this.directionsRenderer.setDirections(result);
             this.estimateWait(places[0]);
           }
         });
+      } else {
+        alert('Dest not found. Try "gate".');
       }
     });
   }
 
   estimateWait(place) {
-    // Places popular times for wait est (requires backend for real-time, sim here)
     const hour = new Date().getHours();
-    const baseWait = Math.floor(Math.random() * 10 + 5); // 5-15min
-    const est = `${baseWait} min wait (peak ${hour > 17 ? 'high' : 'low'})`;
-    document.getElementById('status').textContent = `Est. ${est} at ${place.name}`;
+    const baseWait = Math.floor(Math.random() * 10 + 5);
+    const est = `${baseWait} min estimated wait (demo). Peak: ${hour > 17 ? 'high' : 'low'}`;
+    document.getElementById('status').textContent = est + ' at ' + place.name;
   }
 
   async sendChat() {
@@ -137,24 +169,23 @@ class VenueFlowAI {
 
     this.appendChat('You', msg);
     input.value = '';
-
-    // Spinner
     const btn = document.getElementById('sendChat');
-    btn.innerHTML = '<span class="loading"></span>';
+    const original = btn.textContent;
+    btn.innerHTML = '<span class="loading"></span> Sending...';
 
     try {
-      const context = {
-        ...this.userContext,
+      const contextStr = JSON.stringify({
+        location: this.userContext.location,
         time: new Date().toLocaleString(),
-        crowdLevel: 'medium' // From heatmap avg
-      };
-      const prompt = `You are VenueFlow AI for sporting venues. User at ${JSON.stringify(context)}. Query: ${msg}. Advise on crowd avoidance, waits, paths, coord. Be concise, actionable.`;
+        crowd: 'medium (heatmap)'
+      });
+      const prompt = `VenueFlow AI: Sporting venue assistant. Context: ${contextStr}. User: ${msg}. Give short, practical advice on paths, crowds, waits, friends meetup.`;
       const response = await this.callGemini(prompt);
-      this.appendChat('AI', response);
+      this.appendChat('VenueFlow AI', response);
     } catch (e) {
-      this.appendChat('AI', 'Error: Check Gemini key/network.');
+      this.appendChat('VenueFlow AI', 'Setup Gemini key at aistudio.google.com/app/apikey for chat.');
     }
-    btn.textContent = 'Send';
+    btn.textContent = original;
   }
 
   appendChat(sender, msg) {
@@ -166,16 +197,19 @@ class VenueFlowAI {
   }
 
   async callGemini(prompt) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.geminiApiKey}`;
+    if (this.geminiApiKey === 'YOUR_GEMINI_KEY') throw new Error('Key needed');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${this.geminiApiKey}`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({contents: [{parts: [{text: prompt}]}]})
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
     });
+    if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
     const data = await res.json();
     return data.candidates[0].content.parts[0].text;
   }
 }
 
-// Init app
 const app = new VenueFlowAI();
